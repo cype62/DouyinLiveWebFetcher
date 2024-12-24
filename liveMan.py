@@ -319,7 +319,7 @@ class DouyinLiveWebFetcher:
     def _parseRankMsg(self, payload):
         message = RoomRankMessage().parse(payload)
         ranks_list = message.ranks_list
-        print(f"【直播间排行榜msg】{ranks_list}")
+        print(f"【直播间排行榜msg】{ranks_list.nick_name}")
     
     def _parseControlMsg(self, payload):
         '''直播间状态消息'''
