@@ -15,6 +15,7 @@ import string
 import subprocess
 import urllib.parse
 from contextlib import contextmanager
+from dify_api import post_Dify_api
 from py_mini_racer import MiniRacer
 from unittest.mock import patch
 
@@ -252,6 +253,8 @@ class DouyinLiveWebFetcher:
         user_id = message.user.id
         content = message.content
         print(f"【聊天msg】[{user_id}]{user_name}: {content}")
+        post_Dify_api("{user_name}问： {content}")
+
     
     def _parseGiftMsg(self, payload):
         """礼物消息"""
@@ -275,6 +278,7 @@ class DouyinLiveWebFetcher:
         user_id = message.user.id
         gender = ["女", "男"][message.user.gender]
         print(f"【进场msg】[{user_id}][{gender}]{user_name} 进入了直播间")
+        post_Dify_api("{user_name}（{gender}） 进入了直播间")
     
     def _parseSocialMsg(self, payload):
         '''关注消息'''
@@ -319,7 +323,7 @@ class DouyinLiveWebFetcher:
     def _parseRankMsg(self, payload):
         message = RoomRankMessage().parse(payload)
         ranks_list = message.ranks_list
-        print(f"【直播间排行榜msg】{ranks_list.nick_name}")
+        # print(f"【直播间排行榜msg】{ranks_list}")
     
     def _parseControlMsg(self, payload):
         '''直播间状态消息'''
