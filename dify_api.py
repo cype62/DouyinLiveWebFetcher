@@ -19,7 +19,7 @@ def post_Dify_api(query):
     try:
         response = requests.post(api_url, json=data, headers=header)
         response.raise_for_status()  # 检查请求是否成功
-        print("消息已发送至外部 API")
+        # print("消息已发送至外部 API")
     except requests.RequestException as e:
         print(f"发送消息至外部 API 时出错: {e}")
 
