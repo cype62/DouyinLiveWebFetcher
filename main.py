@@ -19,8 +19,12 @@ async def handle_live_action(request: ActionRequest):
 
     if action == "start":
         if live_id in processes:
-            raise HTTPException(status_code=400, detail="live_id is already running")
-        
+            # 如果进程已经在运行，先终止它
+            process = processes[live_id]
+            process.terminate()  # 终止当前进程
+            process.join()  # 等待进程结束
+            del processes[live_id]  # 移除已结束的进程
+            print(f"[-] 重启live_id为{live_id}的进程")
         # 创建子进程来运行 fetcher
         process = multiprocessing.Process(target=start_fetcher, args=(live_id,))
         process.start()  # 启动子进程 

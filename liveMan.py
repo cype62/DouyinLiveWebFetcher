@@ -7,10 +7,12 @@
 # @Project:     douyinLiveWebFetcher
 
 import codecs
+from collections import deque
 import gzip
 import hashlib
 import random
 import re
+import ssl
 import string
 import subprocess
 import time
@@ -96,6 +98,10 @@ class DouyinLiveWebFetcher:
         :param live_id: 直播间的直播id，打开直播间web首页的链接如：https://live.douyin.com/261378947940，
                         其中的261378947940即是live_id
         """
+        self.recent_like_users = set()  # 存储最近点赞用户的ID
+        self.recent_like_queue = deque(maxlen=10)  # 维护最近10个点赞用户的队列
+
+
         self.__ttwid = None
         self.__room_id = None
         self.live_id = live_id
@@ -158,57 +164,43 @@ class DouyinLiveWebFetcher:
     
     def _connectWebSocket(self):
         """
-        连接抖音直播间websocket服务器，请求直播间数据，支持自动重连，但最多重试三次。
+        连接抖音直播间websocket服务器，请求直播间数据
         """
-        max_retries = 3  # 最大重试次数
-        retries = 0  # 当前重试次数
+        wss = ("wss://webcast5-ws-web-hl.douyin.com/webcast/im/push/v2/?app_name=douyin_web"
+               "&version_code=180800&webcast_sdk_version=1.0.14-beta.0"
+               "&update_version_code=1.0.14-beta.0&compress=gzip&device_platform=web&cookie_enabled=true"
+               "&screen_width=1536&screen_height=864&browser_language=zh-CN&browser_platform=Win32"
+               "&browser_name=Mozilla"
+               "&browser_version=5.0%20(Windows%20NT%2010.0;%20Win64;%20x64)%20AppleWebKit/537.36%20(KHTML,"
+               "%20like%20Gecko)%20Chrome/126.0.0.0%20Safari/537.36"
+               "&browser_online=true&tz_name=Asia/Shanghai"
+               "&cursor=d-1_u-1_fh-7392091211001140287_t-1721106114633_r-1"
+               f"&internal_ext=internal_src:dim|wss_push_room_id:{self.room_id}|wss_push_did:7319483754668557238"
+               f"|first_req_ms:1721106114541|fetch_time:1721106114633|seq:1|wss_info:0-1721106114633-0-0|"
+               f"wrds_v:7392094459690748497"
+               f"&host=https://live.douyin.com&aid=6383&live_id=1&did_rule=3&endpoint=live_pc&support_wrds=1"
+               f"&user_unique_id=7319483754668557238&im_path=/webcast/im/fetch/&identity=audience"
+               f"&need_persist_msg_count=15&insert_task_id=&live_reason=&room_id={self.room_id}&heartbeatDuration=0")
+        
+        signature = generateSignature(wss)
+        wss += f"&signature={signature}"
+        
+        headers = {
+            "cookie": f"ttwid={self.ttwid}",
+            'user-agent': self.user_agent,
+        }
+        self.ws = websocket.WebSocketApp(wss,
+                                         header=headers,
+                                         on_open=self._wsOnOpen,
+                                         on_message=self._wsOnMessage,
+                                         on_error=self._wsOnError,
+                                         on_close=self._wsOnClose)
+        try:
+            self.ws.run_forever()
+        except Exception:
+            self.stop()
+            raise
 
-        while retries < max_retries:
-            try:
-                wss = ("wss://webcast5-ws-web-hl.douyin.com/webcast/im/push/v2/?app_name=douyin_web"
-                       "&version_code=180800&webcast_sdk_version=1.0.14-beta.0"
-                       "&update_version_code=1.0.14-beta.0&compress=gzip&device_platform=web&cookie_enabled=true"
-                       "&screen_width=1536&screen_height=864&browser_language=zh-CN&browser_platform=Win32"
-                       "&browser_name=Mozilla"
-                       "&browser_version=5.0%20(Windows%20NT%2010.0;%20Win64;%20x64)%20AppleWebKit/537.36%20(KHTML,"
-                       "%20like%20Gecko)%20Chrome/126.0.0.0%20Safari/537.36"
-                       "&browser_online=true&tz_name=Asia/Shanghai"
-                       "&cursor=d-1_u-1_fh-7392091211001140287_t-1721106114633_r-1"
-                       f"&internal_ext=internal_src:dim|wss_push_room_id:{self.room_id}|wss_push_did:7319483754668557238"
-                       f"|first_req_ms:1721106114541|fetch_time:1721106114633|seq:1|wss_info:0-1721106114633-0-0|"
-                       f"wrds_v:7392094459690748497"
-                       f"&host=https://live.douyin.com&aid=6383&live_id=1&did_rule=3&endpoint=live_pc&support_wrds=1"
-                       f"&user_unique_id=7319483754668557238&im_path=/webcast/im/fetch/&identity=audience"
-                       f"&need_persist_msg_count=15&insert_task_id=&live_reason=&room_id={self.room_id}&heartbeatDuration=0")
-
-                signature = generateSignature(wss)
-                wss += f"&signature={signature}"
-
-                headers = {
-                    "cookie": f"ttwid={self.ttwid}",
-                    'user-agent': self.user_agent,
-                }
-                self.ws = websocket.WebSocketApp(wss,
-                                                 header=headers,
-                                                 on_open=self._wsOnOpen,
-                                                 on_message=self._wsOnMessage,
-                                                 on_error=self._wsOnError,
-                                                 on_close=self._wsOnClose)
-
-                print("尝试连接到 WebSocket...")
-                self.ws.run_forever()
-
-                # 如果连接成功，则退出循环
-                break
-
-            except Exception as e:
-                retries += 1
-                print(f"WebSocket连接异常: {e}")
-                if retries < max_retries:
-                    print(f"尝试重新连接... ({retries}/{max_retries})")
-                    time.sleep(1)  # 等待 1 秒后重试
-                else:
-                    print("达到最大重试次数，无法连接WebSocket。")
     
     def _wsOnOpen(self, ws):
         """
@@ -258,9 +250,12 @@ class DouyinLiveWebFetcher:
     
     def _wsOnError(self, ws, error):
         print("WebSocket error: ", error)
+        self._connectWebSocket()
+
     
     def _wsOnClose(self, ws, *args):
         print("WebSocket connection closed.")
+
     
     def _parseChatMsg(self, payload):
         """聊天消息"""
@@ -269,7 +264,7 @@ class DouyinLiveWebFetcher:
         user_id = message.user.id
         content = message.content
         print(f"【聊天msg】[{user_id}]{user_name}: {content}")
-        post_Dify_api(f"【聊天msg】{user_name}问： {content}")
+        post_Dify_api(f"action:【聊天msg】,user_name:{user_name},meg:留言：{content}")
 
     
     def _parseGiftMsg(self, payload):
@@ -279,18 +274,27 @@ class DouyinLiveWebFetcher:
         gift_name = message.gift.name
         gift_cnt = message.combo_count
         print(f"【礼物msg】{user_name} 送出了 {gift_name}x{gift_cnt}")
-        post_Dify_api(f"【礼物msg】{user_name}送出了：{content}")
+        post_Dify_api(f"action:【礼物msg】,user_name:{user_name},meg:送出了：{gift_name}x{gift_cnt}")
 
     
     def _parseLikeMsg(self, payload):
         '''点赞消息'''
         message = LikeMessage().parse(payload)
         user_name = message.user.nick_name
+        user_id = message.user.id  # 获取用户 ID
         count = message.count
         print(f"【点赞msg】{user_name} 点了{count}个赞")
-        post_Dify_api(f"【点赞msg】{user_name}点了{count}个赞")
+         # 检查用户是否已经处理过
+        if user_id not in self.recent_like_users:
+            # 将用户 ID 加入集合和队列
+            self.recent_like_users.add(user_id)
+            self.recent_like_queue.append(user_id)
+            post_Dify_api(f"action:【点赞msg】,user_name:{user_name},meg:点了{count}个赞")
+        # 清理过期的用户 ID，确保只保留最近 10 个点赞用户
+        if len(self.recent_like_queue) >= 10:
+            oldest_user_id = self.recent_like_queue.popleft()
+            self.recent_like_users.remove(oldest_user_id)
 
-    
     def _parseMemberMsg(self, payload):
         '''进入直播间消息'''
         message = MemberMessage().parse(payload)
@@ -298,7 +302,7 @@ class DouyinLiveWebFetcher:
         user_id = message.user.id
         gender = ["女", "男"][message.user.gender]
         print(f"【进场msg】[{user_id}][{gender}]{user_name} 进入了直播间")
-        post_Dify_api(f"【进入了直播间】{user_name} ")
+        post_Dify_api(f"action:【进入了直播间】,user_name:{user_name},meg:进了直播间")
     
     def _parseSocialMsg(self, payload):
         '''关注消息'''
@@ -306,7 +310,7 @@ class DouyinLiveWebFetcher:
         user_name = message.user.nick_name
         user_id = message.user.id
         print(f"【关注msg】[{user_id}]{user_name} 关注了主播")
-        post_Dify_api(f"【关注msg】{user_name} 关注了主播 ")
+        post_Dify_api(f"action:【关注msg】,user_name:{user_name},meg:关注了主播")
 
     
     def _parseRoomUserSeqMsg(self, payload):
@@ -315,7 +319,13 @@ class DouyinLiveWebFetcher:
         current = message.total
         total = message.total_pv_for_anchor
         print(f"【统计msg】当前观看人数: {current}, 累计观看人数: {total}")
-        post_Dify_api(f"【统计msg】当前观看人数：{current} ")
+        # 定义随机调用的概率
+        call_probability = 0.3  # 例如，30% 的概率调用 post_Dify_api
+        
+        # 随机决定是否调用 post_Dify_api
+        if random.random() < call_probability:
+            post_Dify_api(f"【统计msg】当前观看人数：{current} ")
+        
 
     
     def _parseFansclubMsg(self, payload):
