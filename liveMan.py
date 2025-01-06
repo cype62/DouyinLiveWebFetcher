@@ -370,7 +370,7 @@ class DouyinLiveWebFetcher:
         total = message.total_pv_for_anchor
         logging.info(f"【统计msg】当前观看人数: {current}, 累计观看人数: {total}")
         # 定义随机调用的概率
-        call_probability = 0.3  # 例如，30% 的概率调用 post_Dify_api
+        call_probability = 0.1  # 例如，30% 的概率调用 post_Dify_api
         
         # 随机决定是否调用 post_Dify_api
         if random.random() < call_probability:

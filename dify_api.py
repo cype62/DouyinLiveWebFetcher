@@ -16,7 +16,7 @@ async def post_Dify_api(user_id, query):
             # 检查 Redis 中是否存在 user_id 对应的 conversation_id
             conversation_id = redis_client.get(f"dify_conversation_id:{user_id}")
             
-            api_url = "http://k.gzspark.cn:30099/v1/chat-messages"  # 更新为实际的 API URL
+            api_url = "http://10.10.6.31:30099/v1/chat-messages"  # 更新为实际的 API URL
             data = {
                 "inputs": {},
                 "query": query,
