@@ -10,11 +10,13 @@ import codecs
 from collections import deque
 import gzip
 import hashlib
+import json
 import random
 import re
 import ssl
 import string
 import subprocess
+import threading
 import time
 import urllib.parse
 from contextlib import contextmanager
@@ -109,11 +111,38 @@ class DouyinLiveWebFetcher:
         self.user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) " \
                           "Chrome/120.0.0.0 Safari/537.36"
     
+        self.heartbeat_interval = 15  # 心跳间隔时间，单位为秒
+        self.heartbeat_timer = None  # 心跳定时器
+
     def start(self):
         self._connectWebSocket()
     
     def stop(self):
         self.ws.close()
+
+    def _start_heartbeat(self):
+        """
+        启动心跳定时器
+        """
+        self.heartbeat_timer = threading.Timer(self.heartbeat_interval, self._send_heartbeat)
+        self.heartbeat_timer.start()
+
+    def _send_heartbeat(self):
+        """
+        发送心跳包
+        """
+        if self.ws and self.ws.sock and self.ws.sock.connected:
+            try:
+                # 发送心跳包
+                self.ws.send("heartbeat", websocket.ABNF.OPCODE_PING)
+                # print("[!] 发送心跳检查...")
+            except Exception as e:
+                print(f"[?] 心跳检查异常: {e}")
+            finally:
+                # 重新启动心跳定时器
+                self._start_heartbeat()
+        else:
+            print("[-] WebSocket连接断开，停止心跳检查。")
     
     @property
     def ttwid(self):
@@ -207,6 +236,8 @@ class DouyinLiveWebFetcher:
         连接建立成功
         """
         print("WebSocket connected.")
+        # 启动心跳定时器
+        self._start_heartbeat()
     
     def _wsOnMessage(self, ws, message):
         """
@@ -231,7 +262,7 @@ class DouyinLiveWebFetcher:
         for msg in response.messages_list:
             method = msg.method
             try:
-                {
+                parser = {
                     'WebcastChatMessage': self._parseChatMsg,  # 聊天消息
                     'WebcastGiftMessage': self._parseGiftMsg,  # 礼物消息
                     'WebcastLikeMessage': self._parseLikeMsg,  # 点赞消息
@@ -244,12 +275,18 @@ class DouyinLiveWebFetcher:
                     'WebcastRoomStatsMessage': self._parseRoomStatsMsg,  # 直播间统计信息
                     'WebcastRoomMessage': self._parseRoomMsg,  # 直播间信息
                     'WebcastRoomRankMessage': self._parseRankMsg,  # 直播间排行榜信息
-                }.get(method)(msg.payload)
+                }.get(method)
+                if parser:
+                    parser(msg.payload)
+                else:
+                    # 如果没有对应的解析方法，打印未处理的消息类型
+                    print(f"【未处理的消息类型】{method}")
             except Exception:
                 pass
     
     def _wsOnError(self, ws, error):
         print("WebSocket error: ", error)
+        print("[!] 重新连接！")
         self._connectWebSocket()
 
     

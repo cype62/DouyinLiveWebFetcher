@@ -5,8 +5,9 @@ from liveMan import DouyinLiveWebFetcher
 
 app = FastAPI()
 
-# 用于存储当前运行的进程
+# 用于存储当前运行的进程和队列
 processes = {}
+queues = {}
 
 class ActionRequest(BaseModel):
     action: str
@@ -24,9 +25,15 @@ async def handle_live_action(request: ActionRequest):
             process.terminate()  # 终止当前进程
             process.join()  # 等待进程结束
             del processes[live_id]  # 移除已结束的进程
+            del queues[live_id]  # 移除对应的队列
             print(f"[-] 重启live_id为{live_id}的进程")
+        
+        # 创建队列用于进程间通信
+        queue = multiprocessing.Queue()
+        queues[live_id] = queue
+        
         # 创建子进程来运行 fetcher
-        process = multiprocessing.Process(target=start_fetcher, args=(live_id,))
+        process = multiprocessing.Process(target=start_fetcher, args=(live_id, queue), daemon=True)        
         process.start()  # 启动子进程 
         processes[live_id] = process  # 记录进程
         return {"status": "success", "live_id": live_id}
@@ -39,14 +46,29 @@ async def handle_live_action(request: ActionRequest):
         process.terminate()  # 终止进程
         process.join()  # 等待进程结束
         del processes[live_id]  # 移除进程
+        del queues[live_id]  # 移除对应的队列
         return {"status": "success", "live_id": live_id, "action": "closed"}
+
+    elif action == "get_data":
+        if live_id not in queues:
+            raise HTTPException(status_code=404, detail="live_id not found")
+        
+        queue = queues[live_id]
+        if not queue.empty():
+            data = queue.get()
+            return {"status": "success", "live_id": live_id, "data": data}
+        else:
+            return {"status": "success", "live_id": live_id, "data": None}
 
     else:
         raise HTTPException(status_code=400, detail="Invalid action")
 
-def start_fetcher(live_id):
+def start_fetcher(live_id, queue):
     fetcher = DouyinLiveWebFetcher(live_id)
-    fetcher.start()
+    # 假设 fetcher.start() 会返回抓取的数据
+    data = fetcher.start()
+    # 将数据放入队列中
+    queue.put(data)
 
 if __name__ == '__main__':
     import uvicorn 
