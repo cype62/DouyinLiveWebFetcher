@@ -245,44 +245,46 @@ class DouyinLiveWebFetcher:
         :param ws: websocket实例
         :param message: 数据
         """
+        try:
+            # 根据proto结构体解析对象
+            package = PushFrame().parse(message)
+            response = Response().parse(gzip.decompress(package.payload))
         
-        # 根据proto结构体解析对象
-        package = PushFrame().parse(message)
-        response = Response().parse(gzip.decompress(package.payload))
-        
-        # 返回直播间服务器链接存活确认消息，便于持续获取数据
-        if response.need_ack:
-            ack = PushFrame(log_id=package.log_id,
-                            payload_type='ack',
-                            payload=response.internal_ext.encode('utf-8')
-                            ).SerializeToString()
-            ws.send(ack, websocket.ABNF.OPCODE_BINARY)
-        
-        # 根据消息类别解析消息体
-        for msg in response.messages_list:
-            method = msg.method
-            try:
-                parser = {
-                    'WebcastChatMessage': self._parseChatMsg,  # 聊天消息
-                    'WebcastGiftMessage': self._parseGiftMsg,  # 礼物消息
-                    'WebcastLikeMessage': self._parseLikeMsg,  # 点赞消息
-                    'WebcastMemberMessage': self._parseMemberMsg,  # 进入直播间消息
-                    'WebcastSocialMessage': self._parseSocialMsg,  # 关注消息
-                    'WebcastRoomUserSeqMessage': self._parseRoomUserSeqMsg,  # 直播间统计
-                    'WebcastFansclubMessage': self._parseFansclubMsg,  # 粉丝团消息
-                    'WebcastControlMessage': self._parseControlMsg,  # 直播间状态消息
-                    'WebcastEmojiChatMessage': self._parseEmojiChatMsg,  # 聊天表情包消息
-                    'WebcastRoomStatsMessage': self._parseRoomStatsMsg,  # 直播间统计信息
-                    'WebcastRoomMessage': self._parseRoomMsg,  # 直播间信息
-                    'WebcastRoomRankMessage': self._parseRankMsg,  # 直播间排行榜信息
-                }.get(method)
-                if parser:
-                    parser(msg.payload)
-                else:
-                    # 如果没有对应的解析方法，打印未处理的消息类型
-                    print(f"【未处理的消息类型】{method}")
-            except Exception:
-                pass
+            # 返回直播间服务器链接存活确认消息，便于持续获取数据
+            if response.need_ack:
+                ack = PushFrame(log_id=package.log_id,
+                                payload_type='ack',
+                                payload=response.internal_ext.encode('utf-8')
+                                ).SerializeToString()
+                ws.send(ack, websocket.ABNF.OPCODE_BINARY)
+            
+            # 根据消息类别解析消息体
+            for msg in response.messages_list:
+                method = msg.method
+                try:
+                    parser = {
+                        'WebcastChatMessage': self._parseChatMsg,  # 聊天消息
+                        'WebcastGiftMessage': self._parseGiftMsg,  # 礼物消息
+                        'WebcastLikeMessage': self._parseLikeMsg,  # 点赞消息
+                        'WebcastMemberMessage': self._parseMemberMsg,  # 进入直播间消息
+                        'WebcastSocialMessage': self._parseSocialMsg,  # 关注消息
+                        'WebcastRoomUserSeqMessage': self._parseRoomUserSeqMsg,  # 直播间统计
+                        'WebcastFansclubMessage': self._parseFansclubMsg,  # 粉丝团消息
+                        'WebcastControlMessage': self._parseControlMsg,  # 直播间状态消息
+                        'WebcastEmojiChatMessage': self._parseEmojiChatMsg,  # 聊天表情包消息
+                        'WebcastRoomStatsMessage': self._parseRoomStatsMsg,  # 直播间统计信息
+                        'WebcastRoomMessage': self._parseRoomMsg,  # 直播间信息
+                        'WebcastRoomRankMessage': self._parseRankMsg,  # 直播间排行榜信息
+                    }.get(method)
+                    if parser:
+                        parser(msg.payload)
+                    else:
+                        # 如果没有对应的解析方法，打印未处理的消息类型
+                        print(f"【未处理的消息类型】{method}")
+                except Exception:
+                    pass
+        except Exception as e:
+            print(f"数据处理异常: {e}")
     
     def _wsOnError(self, ws, error):
         print("WebSocket error: ", error)
@@ -301,17 +303,18 @@ class DouyinLiveWebFetcher:
         user_id = message.user.id
         content = message.content
         print(f"【聊天msg】[{user_id}]{user_name}: {content}")
-        post_Dify_api(f"action:聊天msg,user_name:{user_name},msg:留言：{content}")
+        post_Dify_api(user_id, f"action:聊天msg,user_name:{user_name},msg:留言：{content}")
 
     
     def _parseGiftMsg(self, payload):
         """礼物消息"""
         message = GiftMessage().parse(payload)
         user_name = message.user.nick_name
+        user_id = message.user.id  # 获取用户 ID
         gift_name = message.gift.name
         gift_cnt = message.combo_count
         print(f"【礼物msg】{user_name} 送出了 {gift_name}x{gift_cnt}")
-        post_Dify_api(f"action:礼物msg,user_name:{user_name},msg:送出了：{gift_name}x{gift_cnt}")
+        post_Dify_api(user_id, f"action:礼物msg,user_name:{user_name},msg:送出了：{gift_name}x{gift_cnt}")
 
     
     def _parseLikeMsg(self, payload):
@@ -326,7 +329,7 @@ class DouyinLiveWebFetcher:
             # 将用户 ID 加入集合和队列
             self.recent_like_users.add(user_id)
             self.recent_like_queue.append(user_id)
-            post_Dify_api(f"action:点赞msg,user_name:{user_name},msg:点了{count}个赞")
+            post_Dify_api(user_id, f"action:点赞msg,user_name:{user_name},msg:点了{count}个赞")
         # 清理过期的用户 ID，确保只保留最近 10 个点赞用户
         if len(self.recent_like_queue) >= 10:
             oldest_user_id = self.recent_like_queue.popleft()
@@ -339,7 +342,7 @@ class DouyinLiveWebFetcher:
         user_id = message.user.id
         gender = ["女", "男"][message.user.gender]
         print(f"【进场msg】[{user_id}][{gender}]{user_name} 进入了直播间")
-        post_Dify_api(f"action:进入直播间msg,user_name:{user_name},msg:进了直播间")
+        post_Dify_api(user_id, f"action:进入直播间msg,user_name:{user_name},msg:进了直播间")
     
     def _parseSocialMsg(self, payload):
         '''关注消息'''
@@ -347,7 +350,7 @@ class DouyinLiveWebFetcher:
         user_name = message.user.nick_name
         user_id = message.user.id
         print(f"【关注msg】[{user_id}]{user_name} 关注了主播")
-        post_Dify_api(f"action:关注msg,user_name:{user_name},msg:关注了主播")
+        post_Dify_api(user_id, f"action:关注msg,user_name:{user_name},msg:关注了主播")
 
     
     def _parseRoomUserSeqMsg(self, payload):
@@ -361,7 +364,8 @@ class DouyinLiveWebFetcher:
         
         # 随机决定是否调用 post_Dify_api
         if random.random() < call_probability:
-            post_Dify_api(f"action:统计msg,msg:当前直播间有{current} 人")
+            print("调用 post_Dify_api")
+            post_Dify_api(None, f"action:统计msg,msg:当前直播间有{current}人")
         
 
     

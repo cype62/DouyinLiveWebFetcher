@@ -6,3 +6,4 @@ mini_racer==0.12.4
 fastapi
 uvicorn
 pydantic
+redis
