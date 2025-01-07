@@ -21,7 +21,7 @@ class RedisClient:
         :param password: Redis 密码
         """
         self.host = host
-        self.port = port
+        self.port = int(port)
         self.db = db
         self.password = password
         self.connection_pool = redis.ConnectionPool(
