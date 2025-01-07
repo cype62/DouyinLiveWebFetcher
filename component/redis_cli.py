@@ -25,7 +25,7 @@ class RedisClient:
         self.db = 12
         self.password = password
         self.connection_pool = redis.ConnectionPool(
-            host=host, port=port, db=db, password=password)
+            host=self.host, port=self.port, db=self.db, password=self.password)
         self.client = redis.Redis(connection_pool=self.connection_pool)
 
     def __enter__(self):
