@@ -62,7 +62,7 @@ async def postDifyApi(user_id, query, redis_client):
                             # 保存会话ID
                             redis_client.set(f"dify_conversation_id:{user_id}", new_conversation_id)
                         except Exception as e:
-                            logging.warning('redis保存会话错误:', e)
+                            logging.warning('redis保存会话错误: %s', e)
                     # logging.info("消息已发送至外部 API")
         except aiohttp.ClientError as e:
             logging.error(f"发送消息至外部 API 时出错: {e}")
