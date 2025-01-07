@@ -1,11 +1,18 @@
 import redis
 import logging
+from dotenv import load_dotenv
+import os
 
 # 配置日志
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s - %(levelname)s - %(message)s')
+
+# 加载 .env 文件
+load_dotenv()
+
 
 class RedisClient:
-    def __init__(self, host='10.10.6.31', port=30379, db=12, password='interlib'):
+    def __init__(self, host=os.getenv('REDIS_HOST'), port=os.getenv('REDIS_PORT'), db=os.getenv('REDIS_DB'), password=os.getenv('REDIS_PASSWORD')):
         """
         初始化 Redis 连接
         :param host: Redis 服务器地址
@@ -17,8 +24,23 @@ class RedisClient:
         self.port = port
         self.db = db
         self.password = password
-        self.connection_pool = redis.ConnectionPool(host=host, port=port, db=db, password=password)
+        self.connection_pool = redis.ConnectionPool(
+            host=host, port=port, db=db, password=password)
         self.client = redis.Redis(connection_pool=self.connection_pool)
+
+    def __enter__(self):
+        """
+        进入上下文管理器时调用
+        """
+        logging.info("初始化redis")
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """
+        退出上下文管理器时调用，自动关闭连接
+        """
+        logging.info("关闭redis")
+        self.close()
 
     def get(self, key):
         """
@@ -45,7 +67,7 @@ class RedisClient:
         """
         try:
             self.client.set(key, value, ex=ex)
-            logging.info(f"已设置 Redis key: {key}")
+            # logging.info(f"已设置 Redis key: {key}")
             return True
         except redis.exceptions.RedisError as e:
             logging.error(f"设置 Redis key {key} 时出错: {e}")

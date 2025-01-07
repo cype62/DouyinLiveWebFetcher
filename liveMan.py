@@ -11,36 +11,35 @@ import codecs
 from collections import deque
 import gzip
 import hashlib
-import json
 import logging
 import random
 import re
-import ssl
 import string
 import subprocess
 import threading
-import time
 import urllib.parse
 from contextlib import contextmanager
-from dify_api import post_Dify_api
 from py_mini_racer import MiniRacer
 from unittest.mock import patch
 
-import execjs
 import requests
 import websocket
 
 from protobuf.douyin import *
 
+from component.message_handler import MessageHandler
 
-@contextmanager     
+# Handler = MessageHandler()
+
+
+@contextmanager
 def patched_popen_encoding(encoding='utf-8'):
     original_popen_init = subprocess.Popen.__init__
-    
+
     def new_popen_init(self, *args, **kwargs):
         kwargs['encoding'] = encoding
         original_popen_init(self, *args, **kwargs)
-    
+
     with patch.object(subprocess.Popen, '__init__', new_popen_init):
         yield
 
@@ -60,19 +59,19 @@ def generateSignature(wss, script_file='sign.js'):
     md5 = hashlib.md5()
     md5.update(param.encode())
     md5_param = md5.hexdigest()
-    
+
     with codecs.open(script_file, 'r', encoding='utf8') as f:
         script = f.read()
-        
+
     ctx = MiniRacer()
     ctx.eval(script)
-    
+
     try:
         signature = ctx.call("get_sign", md5_param)
         return signature
     except Exception as e:
         logging.error(e)
-    
+
     # 以下代码对应js脚本为sign_v0.js
     # context = execjs.compile(script)
     # with patched_popen_encoding(encoding='utf-8'):
@@ -95,8 +94,8 @@ def generateMsToken(length=107):
 
 
 class DouyinLiveWebFetcher:
-    
-    def __init__(self, live_id):
+
+    def __init__(self, live_id, redis_client):
         """
         直播间弹幕抓取对象
         :param live_id: 直播间的直播id，打开直播间web首页的链接如：https://live.douyin.com/261378947940，
@@ -105,20 +104,22 @@ class DouyinLiveWebFetcher:
         self.recent_like_users = set()  # 存储最近点赞用户的ID
         self.recent_like_queue = deque(maxlen=10)  # 维护最近10个点赞用户的队列
 
-
         self.__ttwid = None
         self.__room_id = None
         self.live_id = live_id
         self.live_url = "https://live.douyin.com/"
         self.user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) " \
                           "Chrome/120.0.0.0 Safari/537.36"
-    
+
         self.heartbeat_interval = 15  # 心跳间隔时间，单位为秒
         self.heartbeat_timer = None  # 心跳定时器
 
+        # 初始化 MessageHandler，并传入 Redis 客户端
+        self.message_handler = MessageHandler(redis_client)
+
     def start(self):
         self._connectWebSocket()
-    
+
     def stop(self):
         if self.ws:
             self.ws.close()
@@ -131,7 +132,8 @@ class DouyinLiveWebFetcher:
         """
         启动心跳定时器
         """
-        self.heartbeat_timer = threading.Timer(self.heartbeat_interval, self._send_heartbeat)
+        self.heartbeat_timer = threading.Timer(
+            self.heartbeat_interval, self._send_heartbeat)
         self.heartbeat_timer.start()
 
     def _send_heartbeat(self):
@@ -150,7 +152,7 @@ class DouyinLiveWebFetcher:
                 self._start_heartbeat()
         else:
             logging.info("[-] WebSocket连接断开，停止心跳检查。")
-    
+
     @property
     def ttwid(self):
         """
@@ -170,7 +172,7 @@ class DouyinLiveWebFetcher:
         else:
             self.__ttwid = response.cookies.get('ttwid')
             return self.__ttwid
-    
+
     @property
     def room_id(self):
         """
@@ -193,11 +195,11 @@ class DouyinLiveWebFetcher:
             match = re.search(r'roomId\\":\\"(\d+)\\"', response.text)
             if match is None or len(match.groups()) < 1:
                 logging.warning("【X】No match found for roomId")
-            
+
             self.__room_id = match.group(1)
-            
+
             return self.__room_id
-    
+
     def _connectWebSocket(self):
         """
         连接抖音直播间websocket服务器，请求直播间数据
@@ -211,16 +213,17 @@ class DouyinLiveWebFetcher:
                "%20like%20Gecko)%20Chrome/126.0.0.0%20Safari/537.36"
                "&browser_online=true&tz_name=Asia/Shanghai"
                "&cursor=d-1_u-1_fh-7392091211001140287_t-1721106114633_r-1"
-               f"&internal_ext=internal_src:dim|wss_push_room_id:{self.room_id}|wss_push_did:7319483754668557238"
+               f"&internal_ext=internal_src:dim|wss_push_room_id:{
+                   self.room_id}|wss_push_did:7319483754668557238"
                f"|first_req_ms:1721106114541|fetch_time:1721106114633|seq:1|wss_info:0-1721106114633-0-0|"
                f"wrds_v:7392094459690748497"
                f"&host=https://live.douyin.com&aid=6383&live_id=1&did_rule=3&endpoint=live_pc&support_wrds=1"
                f"&user_unique_id=7319483754668557238&im_path=/webcast/im/fetch/&identity=audience"
                f"&need_persist_msg_count=15&insert_task_id=&live_reason=&room_id={self.room_id}&heartbeatDuration=0")
-        
+
         signature = generateSignature(wss)
         wss += f"&signature={signature}"
-        
+
         headers = {
             "cookie": f"ttwid={self.ttwid}",
             'user-agent': self.user_agent,
@@ -237,7 +240,6 @@ class DouyinLiveWebFetcher:
             self.stop()
             raise
 
-    
     def _wsOnOpen(self, ws):
         """
         连接建立成功
@@ -247,7 +249,7 @@ class DouyinLiveWebFetcher:
         if self.heartbeat_timer:
             self.heartbeat_timer.cancel()
         self._start_heartbeat()
-    
+
     def _wsOnMessage(self, ws, message):
         """
         接收到数据
@@ -258,7 +260,7 @@ class DouyinLiveWebFetcher:
             # 根据proto结构体解析对象
             package = PushFrame().parse(message)
             response = Response().parse(gzip.decompress(package.payload))
-        
+
             # 返回直播间服务器链接存活确认消息，便于持续获取数据
             if response.need_ack:
                 ack = PushFrame(log_id=package.log_id,
@@ -266,7 +268,7 @@ class DouyinLiveWebFetcher:
                                 payload=response.internal_ext.encode('utf-8')
                                 ).SerializeToString()
                 ws.send(ack, websocket.ABNF.OPCODE_BINARY)
-            
+
             # 根据消息类别解析消息体
             for msg in response.messages_list:
                 method = msg.method
@@ -295,96 +297,75 @@ class DouyinLiveWebFetcher:
                     pass
         except Exception as e:
             logging.error(f"数据处理异常: {e}")
-    
+
     def _wsOnError(self, ws, error):
         # logging.info("WebSocket error: ", error)
         logging.warning("[!] 重新连接！")
         self._connectWebSocket()
 
-    
     def _wsOnClose(self, ws, *args):
         logging.info("WebSocket connection closed.")
 
-    
     def _parseChatMsg(self, payload):
         """聊天消息"""
         message = ChatMessage().parse(payload)
         user_name = message.user.nick_name
         user_id = message.user.id
         content = message.content
-        logging.info(f"【聊天msg】[{user_id}]{user_name}: {content}")
-        asyncio.run(post_Dify_api(user_id, f"action:聊天msg,user_name:{user_name},msg:留言：{content}"))
+        asyncio.run(self.message_handler.handle_chat_message(
+            user_id, user_name, content))
 
-    
     def _parseGiftMsg(self, payload):
         """礼物消息"""
         message = GiftMessage().parse(payload)
         user_name = message.user.nick_name
-        user_id = message.user.id  # 获取用户 ID
+        user_id = message.user.id
         gift_name = message.gift.name
         gift_cnt = message.combo_count
-        logging.info(f"【礼物msg】{user_name} 送出了 {gift_name}x{gift_cnt}")
-        asyncio.run(post_Dify_api(user_id, f"action:礼物msg,user_name:{user_name},msg:送出了：{gift_name}x{gift_cnt}"))
+        asyncio.run(self.message_handler.handle_gift_message(
+            user_id, user_name, gift_name, gift_cnt))
 
-    
     def _parseLikeMsg(self, payload):
-        '''点赞消息'''
+        """点赞消息"""
         message = LikeMessage().parse(payload)
         user_name = message.user.nick_name
-        user_id = message.user.id  # 获取用户 ID
+        user_id = message.user.id
         count = message.count
-        logging.info(f"【点赞msg】{user_name} 点了{count}个赞")
-         # 检查用户是否已经处理过
-        if user_id not in self.recent_like_users:
-            # 将用户 ID 加入集合和队列
-            self.recent_like_users.add(user_id)
-            self.recent_like_queue.append(user_id)
-            asyncio.run(post_Dify_api(user_id, f"action:点赞msg,user_name:{user_name},msg:点了{count}个赞"))
-        # 清理过期的用户 ID，确保只保留最近 10 个点赞用户
-        if len(self.recent_like_queue) >= 10:
-            oldest_user_id = self.recent_like_queue.popleft()
-            self.recent_like_users.remove(oldest_user_id)
+        asyncio.run(self.message_handler.handle_like_message(
+            user_id, user_name, count))
 
     def _parseMemberMsg(self, payload):
-        '''进入直播间消息'''
+        """进入直播间消息"""
         message = MemberMessage().parse(payload)
         user_name = message.user.nick_name
         user_id = message.user.id
         gender = ["女", "男"][message.user.gender]
-        logging.info(f"【进场msg】[{user_id}][{gender}]{user_name} 进入了直播间")
-        asyncio.run(post_Dify_api(user_id, f"action:进入直播间msg,user_name:{user_name},msg:进了直播间"))
-    
+        # print(f"【进场msg】 {user_name} {user_id} {gender}")
+        asyncio.run(self.message_handler.handle_member_message(
+            user_id, user_name))
+
     def _parseSocialMsg(self, payload):
-        '''关注消息'''
+        """关注消息"""
         message = SocialMessage().parse(payload)
         user_name = message.user.nick_name
         user_id = message.user.id
-        logging.info(f"【关注msg】[{user_id}]{user_name} 关注了主播")
-        asyncio.run(post_Dify_api(user_id, f"action:关注msg,user_name:{user_name},msg:关注了主播"))
+        asyncio.run(self.message_handler.handle_social_message(
+            user_id, user_name))
 
-    
     def _parseRoomUserSeqMsg(self, payload):
-        '''直播间统计'''
+        """直播间统计"""
         message = RoomUserSeqMessage().parse(payload)
         current = message.total
         total = message.total_pv_for_anchor
-        logging.info(f"【统计msg】当前观看人数: {current}, 累计观看人数: {total}")
-        # 定义随机调用的概率
-        call_probability = 0.1  # 例如，30% 的概率调用 post_Dify_api
-        
-        # 随机决定是否调用 post_Dify_api
-        if random.random() < call_probability:
-            logging.info("调用 post_Dify_api")
-            asyncio.run(post_Dify_api(None, f"action:统计msg,msg:当前直播间有{current}人"))
-        
+        asyncio.run(
+            self.message_handler.handle_room_user_seq_message(current, total))
 
-    
     def _parseFansclubMsg(self, payload):
         '''粉丝团消息'''
         message = FansclubMessage().parse(payload)
         content = message.content
         logging.info(f"【粉丝团msg】 {content}")
-    
+
     def _parseEmojiChatMsg(self, payload):
         '''聊天表情包消息'''
         message = EmojiChatMessage().parse(payload)
@@ -392,28 +373,29 @@ class DouyinLiveWebFetcher:
         user = message.user
         common = message.common
         default_content = message.default_content
-        logging.info(f"【聊天表情包id】 {emoji_id},user：{user},common:{common},default_content:{default_content}")
-    
+        logging.info(f"【聊天表情包id】 {emoji_id},user：{user},common:{
+                     common},default_content:{default_content}")
+
     def _parseRoomMsg(self, payload):
         message = RoomMessage().parse(payload)
         common = message.common
         room_id = common.room_id
         logging.info(f"【直播间msg】直播间id:{room_id}")
-    
+
     def _parseRoomStatsMsg(self, payload):
         message = RoomStatsMessage().parse(payload)
         display_long = message.display_long
         logging.info(f"【直播间统计msg】{display_long}")
-    
+
     def _parseRankMsg(self, payload):
         message = RoomRankMessage().parse(payload)
         ranks_list = message.ranks_list
         # logging.info(f"【直播间排行榜msg】{ranks_list}")
-    
+
     def _parseControlMsg(self, payload):
         '''直播间状态消息'''
         message = ControlMessage().parse(payload)
-        
+
         if message.status == 3:
             logging.info("直播间已结束")
             self.stop()
