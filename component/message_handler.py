@@ -70,5 +70,4 @@ class MessageHandler:
 
     async def _post_to_nocobase(self, live_id, user_id, user_name, content):
         """调用 post_Dify_api"""
-        print("写入nocobase")
         await postNocobaseApi(live_id, user_id, user_name, content)
