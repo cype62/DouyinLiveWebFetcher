@@ -312,8 +312,8 @@ class DouyinLiveWebFetcher:
         user_name = message.user.nick_name
         user_id = message.user.id
         content = message.content
-        asyncio.run(self.message_handler.handle_chat_message(
-            user_id, user_name, content))
+        asyncio.run(self.message_handler.handle_chat_message(self.live_id,
+                                                             user_id, user_name, content))
 
     def _parseGiftMsg(self, payload):
         """礼物消息"""

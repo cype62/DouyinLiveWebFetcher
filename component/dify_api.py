@@ -25,7 +25,7 @@ load_dotenv()
 executor = ThreadPoolExecutor(max_workers=5)
 
 
-async def post_Dify_api(user_id, query, redis_client):
+async def postDifyApi(user_id, query, redis_client):
 
     async def _post():
         try:
@@ -61,10 +61,10 @@ async def post_Dify_api(user_id, query, redis_client):
                         try:
                             # 保存会话ID
                             redis_client.set(f"dify_conversation_id:{
-                                             user_id}", new_conversation_id)
+                                user_id}", new_conversation_id)
                         except Exception as e:
-                            print(e)
-                    logging.info("消息已发送至外部 API")
+                            logging.warning('redis保存会话错误:', e)
+                    # logging.info("消息已发送至外部 API")
         except aiohttp.ClientError as e:
             logging.error(f"发送消息至外部 API 时出错: {e}")
         except Exception as e:

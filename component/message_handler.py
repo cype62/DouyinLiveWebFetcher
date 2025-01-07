@@ -14,7 +14,8 @@ from collections import deque
 import logging
 import random
 
-from component.dify_api import post_Dify_api
+from component.dify_api import postDifyApi
+from component.nocobase_api import postNocobaseApi
 
 
 class MessageHandler:
@@ -23,10 +24,11 @@ class MessageHandler:
         self.recent_like_queue = deque(maxlen=10)  # 维护最近10个点赞用户的队列
         self.redis_client = redis_client  # 传入的 Redis 客户端
 
-    async def handle_chat_message(self, user_id, user_name, content):
+    async def handle_chat_message(self, live_id, user_id, user_name, content):
         """处理聊天消息"""
         logging.info(f"【聊天msg】[{user_id}]{user_name}: {content}")
         await self._post_to_dify(user_id, f"action:聊天msg,user_name:{user_name},msg:留言：{content}")
+        await self._post_to_nocobase(live_id, user_id, user_name, content)
 
     async def handle_gift_message(self, user_id, user_name, gift_name, gift_cnt):
         """处理礼物消息"""
@@ -58,11 +60,15 @@ class MessageHandler:
         """处理直播间统计消息"""
         logging.info(f"【统计msg】当前观看人数: {current}, 累计观看人数: {total}")
         if current > 5:
-            call_probability = 0.1  # 例如，30% 的概率调用 post_Dify_api
+            call_probability = 0.05  # 例如，5% 的概率调用 post_Dify_api
             if random.random() < call_probability:
-                logging.info("调用 post_Dify_api")
                 await self._post_to_dify(None, f"action:统计msg,msg:当前直播间有{current}人")
 
     async def _post_to_dify(self, user_id, message):
         """调用 post_Dify_api"""
-        await post_Dify_api(user_id, message, self.redis_client)
+        await postDifyApi(user_id, message, self.redis_client)
+
+    async def _post_to_nocobase(self, live_id, user_id, user_name, content):
+        """调用 post_Dify_api"""
+        print("写入nocobase")
+        await postNocobaseApi(live_id, user_id, user_name, content)
