@@ -213,8 +213,7 @@ class DouyinLiveWebFetcher:
                "%20like%20Gecko)%20Chrome/126.0.0.0%20Safari/537.36"
                "&browser_online=true&tz_name=Asia/Shanghai"
                "&cursor=d-1_u-1_fh-7392091211001140287_t-1721106114633_r-1"
-               f"&internal_ext=internal_src:dim|wss_push_room_id:{
-                   self.room_id}|wss_push_did:7319483754668557238"
+               f"&internal_ext=internal_src:dim|wss_push_room_id:{self.room_id}|wss_push_did:7319483754668557238"
                f"|first_req_ms:1721106114541|fetch_time:1721106114633|seq:1|wss_info:0-1721106114633-0-0|"
                f"wrds_v:7392094459690748497"
                f"&host=https://live.douyin.com&aid=6383&live_id=1&did_rule=3&endpoint=live_pc&support_wrds=1"
@@ -312,8 +311,7 @@ class DouyinLiveWebFetcher:
         user_name = message.user.nick_name
         user_id = message.user.id
         content = message.content
-        asyncio.run(self.message_handler.handle_chat_message(self.live_id,
-                                                             user_id, user_name, content))
+        asyncio.run(self.message_handler.handle_chat_message(self.live_id, user_id, user_name, content))
 
     def _parseGiftMsg(self, payload):
         """礼物消息"""
@@ -373,8 +371,7 @@ class DouyinLiveWebFetcher:
         user = message.user
         common = message.common
         default_content = message.default_content
-        logging.info(f"【聊天表情包id】 {emoji_id},user：{user},common:{
-                     common},default_content:{default_content}")
+        logging.info(f"【聊天表情包id】 {emoji_id},user：{user},common:{common},default_content:{default_content}")
 
     def _parseRoomMsg(self, payload):
         message = RoomMessage().parse(payload)

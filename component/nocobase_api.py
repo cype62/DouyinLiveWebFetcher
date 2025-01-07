@@ -36,7 +36,7 @@ async def postNocobaseApi(live_id, user_id, user_name, msg):
             "live_id": live_id
         }
         headers = {
-            'Authorization': f'Bearer {os.getenv('NOCOBASE_API_KEY')}',
+            'Authorization': 'Bearer ' + os.getenv('NOCOBASE_API_KEY'),
             'Content-Type': 'application/json'
         }
 

@@ -45,7 +45,7 @@ async def postDifyApi(user_id, query, redis_client):
                 "user": os.getenv('DIFY_USER'),
             }
             headers = {
-                'Authorization': f'Bearer {os.getenv('DIFY_API_KEY')}',
+                'Authorization': 'Bearer ' + os.getenv('DIFY_API_KEY'),
                 'Content-Type': 'application/json'
             }
 
@@ -60,8 +60,7 @@ async def postDifyApi(user_id, query, redis_client):
                     if user_id != None and new_conversation_id and new_conversation_id != conversation_id:
                         try:
                             # 保存会话ID
-                            redis_client.set(f"dify_conversation_id:{
-                                user_id}", new_conversation_id)
+                            redis_client.set(f"dify_conversation_id:{user_id}", new_conversation_id)
                         except Exception as e:
                             logging.warning('redis保存会话错误:', e)
                     # logging.info("消息已发送至外部 API")
