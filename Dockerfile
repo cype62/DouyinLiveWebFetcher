@@ -1,5 +1,5 @@
 # 使用官方 Python 作为基础镜像
-FROM python:3.11-slim
+FROM python:3.12.8-slim
 
 RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple 
 RUN pip config set install.trusted-host mirrors.aliyun.com
